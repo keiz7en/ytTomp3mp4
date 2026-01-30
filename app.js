@@ -185,7 +185,7 @@ async function convertVideo() {
         if (progress < 30) {
             progressText.textContent = 'Fetching video...';
         } else if (progress < 60) {
-            progressText.textContent = 'Converting...';
+            progressText.textContent = 'Processing...';
         } else {
             progressText.textContent = 'Almost done...';
         }
@@ -221,10 +221,17 @@ async function convertVideo() {
             .substring(0, 50);
         const filename = `${sanitizedTitle}.${selectedFormat}`;
         
-        // Update download link - use the URL directly
+        // Update download link
         downloadLink.href = data.downloadUrl;
         downloadLink.download = filename;
-        downloadLink.target = '_blank'; // Open in new tab for external URLs
+        downloadLink.target = '_blank';
+        
+        // Update button text based on response type
+        if (data.redirect) {
+            downloadLink.textContent = 'Open Download Page';
+        } else {
+            downloadLink.textContent = 'Download ' + selectedFormat.toUpperCase();
+        }
         
         progressFill.style.width = '100%';
         progressText.textContent = 'Complete!';

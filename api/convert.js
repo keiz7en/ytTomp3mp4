@@ -1,5 +1,5 @@
-// Convert endpoint - returns download URLs
-// Uses cobalt.tools API for YouTube downloads (free, no auth required)
+// Convert endpoint - redirect to external download service
+// Since YouTube download APIs require self-hosting, we redirect to a trusted service
 module.exports = async function handler(req, res) {
     // Enable CORS
     res.setHeader('Access-Control-Allow-Origin', '*');
@@ -27,57 +27,78 @@ module.exports = async function handler(req, res) {
             return res.status(400).json({ error: 'Invalid YouTube URL' });
         }
 
-        const youtubeUrl = `https://www.youtube.com/watch?v=${videoId}`;
-
         console.log('Converting:', { videoId, format, quality });
 
-        // Use cobalt.tools API
-        const cobaltResponse = await fetch('https://api.cobalt.tools/api/json', {
-            method: 'POST',
+        // Use loader.to service (free, no API key required)
+        // This is a redirect-based approach
+        const youtubeUrl = encodeURIComponent(`https://www.youtube.com/watch?v=${videoId}`);
+        
+        let downloadUrl;
+        if (format === 'mp3') {
+            // For MP3 audio
+            downloadUrl = `https://loader.to/ajax/download.php?format=mp3&url=${youtubeUrl}`;
+        } else {
+            // For MP4 video - map quality
+            const qualityMap = {
+                '1080': '1080',
+                '720': '720', 
+                '480': '480',
+                '360': '360'
+            };
+            const videoQuality = qualityMap[quality] || '720';
+            downloadUrl = `https://loader.to/ajax/download.php?format=${videoQuality}&url=${youtubeUrl}`;
+        }
+
+        // Fetch the download info from loader.to
+        const response = await fetch(downloadUrl, {
             headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
                 'Accept': 'application/json',
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-                url: youtubeUrl,
-                vCodec: 'h264',
-                vQuality: quality === '1080p' ? '1080' : quality === '720p' ? '720' : quality === '480p' ? '480' : '720',
-                aFormat: 'mp3',
-                isAudioOnly: format === 'mp3',
-                filenamePattern: 'basic',
-            })
+            }
         });
 
-        const data = await cobaltResponse.json();
+        const data = await response.json();
 
-        if (data.status === 'error') {
-            console.error('Cobalt error:', data);
-            return res.status(400).json({ error: data.text || 'Failed to process video' });
-        }
-
-        if (data.status === 'stream' || data.status === 'redirect') {
+        if (data.success && data.download_url) {
             return res.status(200).json({
                 success: true,
-                downloadUrl: data.url,
+                downloadUrl: data.download_url,
                 filename: `video.${format === 'mp3' ? 'mp3' : 'mp4'}`
             });
         }
 
-        if (data.status === 'picker' && data.picker && data.picker.length > 0) {
-            // Multiple options available, return the first one
-            return res.status(200).json({
-                success: true,
-                downloadUrl: data.picker[0].url,
-                filename: `video.${format === 'mp3' ? 'mp3' : 'mp4'}`
-            });
-        }
+        // If loader.to doesn't work, provide alternative service links
+        // These are well-known YouTube converter services
+        const alternativeUrl = format === 'mp3' 
+            ? `https://www.y2mate.com/youtube-mp3/${videoId}`
+            : `https://www.y2mate.com/youtube/${videoId}`;
 
-        // Fallback error
-        console.error('Unexpected response:', data);
-        return res.status(500).json({ error: 'Could not generate download link' });
+        return res.status(200).json({
+            success: true,
+            redirect: true,
+            downloadUrl: alternativeUrl,
+            message: 'Click the download button to get your file'
+        });
 
     } catch (error) {
         console.error('Error:', error.message);
+        
+        // Fallback - return a link to a conversion service
+        const videoId = extractVideoId(req.body?.url);
+        if (videoId) {
+            const format = req.body?.format || 'mp4';
+            const fallbackUrl = format === 'mp3'
+                ? `https://www.y2mate.com/youtube-mp3/${videoId}`
+                : `https://www.y2mate.com/youtube/${videoId}`;
+            
+            return res.status(200).json({
+                success: true,
+                redirect: true,
+                downloadUrl: fallbackUrl,
+                message: 'Click to download from external service'
+            });
+        }
+        
         return res.status(500).json({ 
             error: 'Failed to convert video. Please try again.'
         });
