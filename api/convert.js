@@ -1,17 +1,19 @@
 const ytdl = require('@distube/ytdl-core');
-const ffmpeg = require('fluent-ffmpeg');
-const ffmpegPath = require('ffmpeg-static');
-const fs = require('fs');
-const path = require('path');
-const os = require('os');
 
-// Set FFmpeg path
-ffmpeg.setFfmpegPath(ffmpegPath);
-
-// Helper to send JSON response
-function sendJson(res, statusCode, data) {
-    res.writeHead(statusCode, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify(data));
+// Parse body helper
+async function parseBody(req) {
+    if (req.body) return req.body;
+    return new Promise((resolve) => {
+        let body = '';
+        req.on('data', chunk => body += chunk);
+        req.on('end', () => {
+            try {
+                resolve(JSON.parse(body));
+            } catch (e) {
+                resolve({});
+            }
+        });
+    });
 }
 
 module.exports = async (req, res) => {
@@ -21,27 +23,27 @@ module.exports = async (req, res) => {
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
 
     if (req.method === 'OPTIONS') {
-        res.writeHead(200);
-        return res.end();
+        return res.status(200).end();
     }
 
     if (req.method !== 'POST') {
-        return sendJson(res, 405, { error: 'Method not allowed' });
+        return res.status(405).json({ error: 'Method not allowed' });
     }
 
     try {
-        const { url, format = 'mp3', quality = '128' } = req.body;
+        const body = await parseBody(req);
+        const { url, format = 'mp3', quality = '128' } = body;
 
         if (!url) {
-            return sendJson(res, 400, { error: 'URL is required' });
+            return res.status(400).json({ error: 'URL is required' });
         }
 
         // Validate YouTube URL
         if (!ytdl.validateURL(url)) {
-            return sendJson(res, 400, { error: 'Invalid YouTube URL' });
+            return res.status(400).json({ error: 'Invalid YouTube URL' });
         }
 
-        // Get video info for filename
+        // Get video info
         const info = await ytdl.getInfo(url);
         const videoDetails = info.videoDetails;
         
@@ -50,219 +52,103 @@ module.exports = async (req, res) => {
             .replace(/[^\w\s-]/g, '')
             .replace(/\s+/g, '_')
             .substring(0, 50);
-        const filename = `${sanitizedTitle}.${format}`;
 
         if (format === 'mp3') {
-            // Audio only - MP3 conversion
-            const audioBitrate = parseInt(quality) || 128;
+            // Audio download - get best audio format
+            const filename = `${sanitizedTitle}.mp3`;
             
-            // Set response headers
+            // Find best audio format
+            let audioFormat = null;
+            for (const fmt of info.formats) {
+                if (fmt.hasAudio && !fmt.hasVideo) {
+                    if (!audioFormat || (fmt.audioBitrate && fmt.audioBitrate > (audioFormat.audioBitrate || 0))) {
+                        audioFormat = fmt;
+                    }
+                }
+            }
+
+            if (!audioFormat) {
+                // Fallback to any format with audio
+                audioFormat = ytdl.chooseFormat(info.formats, { quality: 'highestaudio' });
+            }
+
             res.setHeader('Content-Type', 'audio/mpeg');
             res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
             
-            // Get audio stream with best audio quality
-            const audioStream = ytdl(url, {
-                quality: 'highestaudio',
-                filter: 'audioonly'
-            });
-
-            audioStream.on('error', (err) => {
-                console.error('ytdl audio stream error:', err);
+            // Stream directly
+            const stream = ytdl(url, { format: audioFormat });
+            stream.pipe(res);
+            
+            stream.on('error', (err) => {
+                console.error('Stream error:', err);
                 if (!res.headersSent) {
-                    sendJson(res, 500, { error: 'Failed to download audio' });
+                    res.status(500).json({ error: 'Download failed' });
                 }
             });
 
-            // Convert to MP3 using FFmpeg
-            const ffmpegProcess = ffmpeg(audioStream)
-                .audioBitrate(audioBitrate)
-                .audioCodec('libmp3lame')
-                .format('mp3')
-                .on('start', (cmd) => {
-                    console.log('FFmpeg started:', cmd);
-                })
-                .on('error', (err, stdout, stderr) => {
-                    console.error('FFmpeg error:', err);
-                    if (!res.headersSent) {
-                        sendJson(res, 500, { error: 'Conversion failed' });
-                    }
-                })
-                .on('end', () => {
-                    console.log('FFmpeg conversion completed');
-                });
-
-            ffmpegProcess.pipe(res, { end: true });
-
         } else {
-            // Video - MP4
+            // Video download - MP4
+            const filename = `${sanitizedTitle}.mp4`;
             const targetHeight = parseInt(quality) || 720;
             
-            // First, try to find a combined format (video + audio in one stream)
-            // These are more reliable and don't need merging
-            let combinedFormat = null;
+            // Find best combined format (video + audio)
+            let selectedFormat = null;
             for (const fmt of info.formats) {
                 if (fmt.container === 'mp4' && fmt.hasVideo && fmt.hasAudio) {
                     const fmtHeight = fmt.height || 0;
                     if (fmtHeight <= targetHeight) {
-                        if (!combinedFormat || fmtHeight > (combinedFormat.height || 0)) {
-                            combinedFormat = fmt;
+                        if (!selectedFormat || fmtHeight > (selectedFormat.height || 0)) {
+                            selectedFormat = fmt;
                         }
                     }
                 }
             }
 
-            // If target is high quality (720p+) and no good combined format, try merging
-            if (targetHeight >= 720 && (!combinedFormat || (combinedFormat.height || 0) < 720)) {
-                // Find separate video and audio streams
-                let videoFormat = null;
-                let audioFormat = null;
-
+            // Fallback to any combined format
+            if (!selectedFormat) {
                 for (const fmt of info.formats) {
-                    if (fmt.hasVideo && !fmt.hasAudio) {
-                        if (fmt.height && fmt.height <= targetHeight) {
-                            if (!videoFormat || fmt.height > videoFormat.height) {
-                                videoFormat = fmt;
-                            }
-                        }
-                    }
-                }
-
-                for (const fmt of info.formats) {
-                    if (fmt.hasAudio && !fmt.hasVideo) {
-                        if (!audioFormat || (fmt.audioBitrate && fmt.audioBitrate > (audioFormat.audioBitrate || 0))) {
-                            audioFormat = fmt;
-                        }
-                    }
-                }
-
-                if (videoFormat && audioFormat) {
-                    console.log(`Downloading & merging: video (${videoFormat.qualityLabel || videoFormat.height + 'p'}) + audio (${audioFormat.audioBitrate}kbps)`);
-                    
-                    // Download to temp files then merge (more reliable than streaming)
-                    const tempDir = os.tmpdir();
-                    const tempId = Date.now() + '_' + Math.random().toString(36).substr(2, 9);
-                    const tempVideo = path.join(tempDir, `yt_v_${tempId}.mp4`);
-                    const tempAudio = path.join(tempDir, `yt_a_${tempId}.m4a`);
-                    const tempOutput = path.join(tempDir, `yt_o_${tempId}.mp4`);
-
-                    const cleanup = () => {
-                        try { fs.unlinkSync(tempVideo); } catch(e) {}
-                        try { fs.unlinkSync(tempAudio); } catch(e) {}
-                        try { fs.unlinkSync(tempOutput); } catch(e) {}
-                    };
-
-                    try {
-                        // Download video and audio in parallel
-                        console.log('Downloading streams...');
-                        await Promise.all([
-                            new Promise((resolve, reject) => {
-                                const ws = fs.createWriteStream(tempVideo);
-                                ytdl(url, { format: videoFormat })
-                                    .on('error', reject)
-                                    .pipe(ws)
-                                    .on('finish', resolve)
-                                    .on('error', reject);
-                            }),
-                            new Promise((resolve, reject) => {
-                                const ws = fs.createWriteStream(tempAudio);
-                                ytdl(url, { format: audioFormat })
-                                    .on('error', reject)
-                                    .pipe(ws)
-                                    .on('finish', resolve)
-                                    .on('error', reject);
-                            })
-                        ]);
-
-                        // Merge with FFmpeg
-                        console.log('Merging...');
-                        await new Promise((resolve, reject) => {
-                            ffmpeg()
-                                .input(tempVideo)
-                                .input(tempAudio)
-                                .outputOptions(['-c:v copy', '-c:a aac', '-b:a 192k', '-movflags +faststart'])
-                                .output(tempOutput)
-                                .on('end', resolve)
-                                .on('error', reject)
-                                .run();
-                        });
-
-                        // Send file
-                        console.log('Sending merged file...');
-                        res.setHeader('Content-Type', 'video/mp4');
-                        res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-                        
-                        const stat = fs.statSync(tempOutput);
-                        res.setHeader('Content-Length', stat.size);
-                        
-                        const readStream = fs.createReadStream(tempOutput);
-                        readStream.pipe(res);
-                        readStream.on('close', cleanup);
-                        
-                        return;
-
-                    } catch (err) {
-                        console.error('Merge error:', err);
-                        cleanup();
-                        // Fall through to combined format
-                    }
-                }
-            }
-
-            // Use combined format (either found or as fallback)
-            if (!combinedFormat) {
-                // Get any combined format
-                for (const fmt of info.formats) {
-                    if (fmt.container === 'mp4' && fmt.hasVideo && fmt.hasAudio) {
-                        if (!combinedFormat || (fmt.height && fmt.height > (combinedFormat.height || 0))) {
-                            combinedFormat = fmt;
+                    if (fmt.hasVideo && fmt.hasAudio) {
+                        if (!selectedFormat || (fmt.height && fmt.height > (selectedFormat.height || 0))) {
+                            selectedFormat = fmt;
                         }
                     }
                 }
             }
 
-            if (combinedFormat) {
-                console.log('Using combined format:', combinedFormat.qualityLabel || combinedFormat.height + 'p');
-                res.setHeader('Content-Type', 'video/mp4');
-                res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-                
-                const videoStream = ytdl(url, { format: combinedFormat });
-                videoStream.on('error', (err) => {
-                    console.error('ytdl error:', err);
-                    if (!res.headersSent) {
-                        sendJson(res, 500, { error: 'Failed to download video' });
-                    }
-                });
-                videoStream.pipe(res, { end: true });
-            } else {
-                // Last resort: just download highest quality available
-                console.log('Using highest available quality');
-                res.setHeader('Content-Type', 'video/mp4');
-                res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-                
-                const videoStream = ytdl(url, { quality: 'highest' });
-                videoStream.on('error', (err) => {
-                    console.error('ytdl error:', err);
-                    if (!res.headersSent) {
-                        sendJson(res, 500, { error: 'Failed to download video' });
-                    }
-                });
-                videoStream.pipe(res, { end: true });
+            if (!selectedFormat) {
+                return res.status(500).json({ error: 'No suitable video format found' });
             }
+
+            console.log('Using format:', selectedFormat.qualityLabel || selectedFormat.height + 'p');
+
+            res.setHeader('Content-Type', 'video/mp4');
+            res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+            
+            // Stream directly
+            const stream = ytdl(url, { format: selectedFormat });
+            stream.pipe(res);
+            
+            stream.on('error', (err) => {
+                console.error('Stream error:', err);
+                if (!res.headersSent) {
+                    res.status(500).json({ error: 'Download failed' });
+                }
+            });
         }
 
     } catch (error) {
-        console.error('Error converting video:', error);
+        console.error('Error:', error);
 
         if (error.message?.includes('Video unavailable')) {
-            return sendJson(res, 404, { error: 'Video not found or unavailable' });
+            return res.status(404).json({ error: 'Video not found or unavailable' });
         }
 
         if (error.message?.includes('Private video')) {
-            return sendJson(res, 403, { error: 'This video is private' });
+            return res.status(403).json({ error: 'This video is private' });
         }
 
         if (!res.headersSent) {
-            return sendJson(res, 500, { 
+            return res.status(500).json({ 
                 error: 'Failed to convert video. Please try again.' 
             });
         }

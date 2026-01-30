@@ -2,8 +2,24 @@ const ytdl = require('@distube/ytdl-core');
 
 // Helper to send JSON response
 function sendJson(res, statusCode, data) {
-    res.writeHead(statusCode, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify(data));
+    res.setHeader('Content-Type', 'application/json');
+    res.status(statusCode).json(data);
+}
+
+// Parse body helper
+async function parseBody(req) {
+    if (req.body) return req.body;
+    return new Promise((resolve) => {
+        let body = '';
+        req.on('data', chunk => body += chunk);
+        req.on('end', () => {
+            try {
+                resolve(JSON.parse(body));
+            } catch (e) {
+                resolve({});
+            }
+        });
+    });
 }
 
 module.exports = async (req, res) => {
@@ -13,24 +29,24 @@ module.exports = async (req, res) => {
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
 
     if (req.method === 'OPTIONS') {
-        res.writeHead(200);
-        return res.end();
+        return res.status(200).end();
     }
 
     if (req.method !== 'POST') {
-        return sendJson(res, 405, { error: 'Method not allowed' });
+        return res.status(405).json({ error: 'Method not allowed' });
     }
 
     try {
-        const { url } = req.body;
+        const body = await parseBody(req);
+        const { url } = body;
 
         if (!url) {
-            return sendJson(res, 400, { error: 'URL is required' });
+            return res.status(400).json({ error: 'URL is required' });
         }
 
         // Validate YouTube URL
         if (!ytdl.validateURL(url)) {
-            return sendJson(res, 400, { error: 'Invalid YouTube URL' });
+            return res.status(400).json({ error: 'Invalid YouTube URL' });
         }
 
         // Get video info
@@ -44,7 +60,7 @@ module.exports = async (req, res) => {
         const thumbnail = thumbnails[thumbnails.length - 1]?.url || 
                          thumbnails[0]?.url || '';
 
-        return sendJson(res, 200, {
+        return res.status(200).json({
             videoId: videoDetails.videoId,
             title: videoDetails.title,
             author: videoDetails.author.name,
@@ -57,18 +73,18 @@ module.exports = async (req, res) => {
         console.error('Error fetching video info:', error);
 
         if (error.message?.includes('Video unavailable')) {
-            return sendJson(res, 404, { error: 'Video not found or unavailable' });
+            return res.status(404).json({ error: 'Video not found or unavailable' });
         }
 
         if (error.message?.includes('Private video')) {
-            return sendJson(res, 403, { error: 'This video is private' });
+            return res.status(403).json({ error: 'This video is private' });
         }
 
         if (error.message?.includes('age')) {
-            return sendJson(res, 403, { error: 'Age-restricted videos are not supported' });
+            return res.status(403).json({ error: 'Age-restricted videos are not supported' });
         }
 
-        return sendJson(res, 500, { 
+        return res.status(500).json({ 
             error: 'Failed to fetch video information. Please try again.' 
         });
     }

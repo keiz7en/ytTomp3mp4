@@ -4,9 +4,7 @@
   "description": "YouTube to MP3/MP4 Converter",
   "scripts": {},
   "dependencies": {
-    "@distube/ytdl-core": "^4.14.4",
-    "fluent-ffmpeg": "^2.1.3",
-    "ffmpeg-static": "^5.2.0"
+    "@distube/ytdl-core": "^4.14.4"
   },
   "engines": {
     "node": "24.x"
