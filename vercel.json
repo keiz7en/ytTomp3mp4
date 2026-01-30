@@ -1,6 +1,7 @@
 {
-  "rewrites": [
-    { "source": "/api/info", "destination": "/api/info" },
-    { "source": "/api/convert", "destination": "/api/convert" }
-  ]
+  "functions": {
+    "api/*.js": {
+      "maxDuration": 60
+    }
+  }
 }

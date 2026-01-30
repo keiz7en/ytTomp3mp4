@@ -1,31 +1,9 @@
 const ytdl = require('@distube/ytdl-core');
 
-// Helper to send JSON response
-function sendJson(res, statusCode, data) {
-    res.setHeader('Content-Type', 'application/json');
-    res.status(statusCode).json(data);
-}
-
-// Parse body helper
-async function parseBody(req) {
-    if (req.body) return req.body;
-    return new Promise((resolve) => {
-        let body = '';
-        req.on('data', chunk => body += chunk);
-        req.on('end', () => {
-            try {
-                resolve(JSON.parse(body));
-            } catch (e) {
-                resolve({});
-            }
-        });
-    });
-}
-
-module.exports = async (req, res) => {
+module.exports = async function handler(req, res) {
     // Enable CORS
     res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
 
     if (req.method === 'OPTIONS') {
@@ -37,8 +15,7 @@ module.exports = async (req, res) => {
     }
 
     try {
-        const body = await parseBody(req);
-        const { url } = body;
+        const { url } = req.body || {};
 
         if (!url) {
             return res.status(400).json({ error: 'URL is required' });
@@ -49,28 +26,39 @@ module.exports = async (req, res) => {
             return res.status(400).json({ error: 'Invalid YouTube URL' });
         }
 
-        // Get video info
-        const info = await ytdl.getInfo(url);
-        const videoDetails = info.videoDetails;
+        console.log('Fetching info for:', url);
 
-        const duration = parseInt(videoDetails.lengthSeconds);
+        // Get video info with agent
+        const info = await ytdl.getInfo(url, {
+            requestOptions: {
+                headers: {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                }
+            }
+        });
+        
+        const videoDetails = info.videoDetails;
+        const duration = parseInt(videoDetails.lengthSeconds) || 0;
 
         // Get best thumbnail
-        const thumbnails = videoDetails.thumbnails;
+        const thumbnails = videoDetails.thumbnails || [];
         const thumbnail = thumbnails[thumbnails.length - 1]?.url || 
-                         thumbnails[0]?.url || '';
+                         thumbnails[0]?.url || 
+                         `https://img.youtube.com/vi/${videoDetails.videoId}/maxresdefault.jpg`;
+
+        console.log('Got info for:', videoDetails.title);
 
         return res.status(200).json({
             videoId: videoDetails.videoId,
             title: videoDetails.title,
-            author: videoDetails.author.name,
+            author: videoDetails.author?.name || 'Unknown',
             duration: duration,
             thumbnail: thumbnail,
-            viewCount: videoDetails.viewCount
+            viewCount: videoDetails.viewCount || '0'
         });
 
     } catch (error) {
-        console.error('Error fetching video info:', error);
+        console.error('Error fetching video info:', error.message);
 
         if (error.message?.includes('Video unavailable')) {
             return res.status(404).json({ error: 'Video not found or unavailable' });
@@ -84,8 +72,12 @@ module.exports = async (req, res) => {
             return res.status(403).json({ error: 'Age-restricted videos are not supported' });
         }
 
+        if (error.message?.includes('Sign in')) {
+            return res.status(403).json({ error: 'This video requires sign-in' });
+        }
+
         return res.status(500).json({ 
-            error: 'Failed to fetch video information. Please try again.' 
+            error: 'Failed to fetch video information. YouTube may be blocking requests. Please try again later.'
         });
     }
 };

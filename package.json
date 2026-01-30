@@ -4,9 +4,9 @@
   "description": "YouTube to MP3/MP4 Converter",
   "scripts": {},
   "dependencies": {
-    "@distube/ytdl-core": "^4.14.4"
+    "@distube/ytdl-core": "^4.16.10"
   },
   "engines": {
-    "node": "24.x"
+    "node": "20.x"
   }
 }
