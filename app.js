@@ -151,7 +151,7 @@ async function fetchVideoInfo() {
         // Update UI
         videoThumbnail.src = data.thumbnail;
         videoTitle.textContent = data.title;
-        videoDuration.textContent = `Duration: ${formatDuration(data.duration)}`;
+        videoDuration.textContent = data.duration > 0 ? `Duration: ${formatDuration(data.duration)}` : '';
         videoAuthor.textContent = `Channel: ${data.author}`;
         
         updateQualityOptions();
@@ -204,14 +204,15 @@ async function convertVideo() {
         
         clearInterval(progressInterval);
         
+        const data = await response.json();
+        
         if (!response.ok) {
-            const errorData = await response.json();
-            throw new Error(errorData.error || 'Conversion failed');
+            throw new Error(data.error || 'Conversion failed');
         }
         
-        // Get the blob
-        const blob = await response.blob();
-        const downloadUrl = URL.createObjectURL(blob);
+        if (!data.downloadUrl) {
+            throw new Error('No download URL received');
+        }
         
         // Create filename
         const sanitizedTitle = currentVideoInfo.title
@@ -220,9 +221,10 @@ async function convertVideo() {
             .substring(0, 50);
         const filename = `${sanitizedTitle}.${selectedFormat}`;
         
-        // Update download link
-        downloadLink.href = downloadUrl;
+        // Update download link - use the URL directly
+        downloadLink.href = data.downloadUrl;
         downloadLink.download = filename;
+        downloadLink.target = '_blank'; // Open in new tab for external URLs
         
         progressFill.style.width = '100%';
         progressText.textContent = 'Complete!';

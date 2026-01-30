@@ -3,9 +3,7 @@
   "version": "1.0.0",
   "description": "YouTube to MP3/MP4 Converter",
   "scripts": {},
-  "dependencies": {
-    "@distube/ytdl-core": "^4.16.10"
-  },
+  "dependencies": {},
   "engines": {
     "node": "20.x"
   }

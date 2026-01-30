@@ -1,5 +1,5 @@
-const ytdl = require('@distube/ytdl-core');
-
+// Convert endpoint - returns download URLs
+// Uses cobalt.tools API for YouTube downloads (free, no auth required)
 module.exports = async function handler(req, res) {
     // Enable CORS
     res.setHeader('Access-Control-Allow-Origin', '*');
@@ -15,138 +15,94 @@ module.exports = async function handler(req, res) {
     }
 
     try {
-        const { url, format = 'mp3', quality = '128' } = req.body || {};
+        const { url, format, quality } = req.body || {};
 
         if (!url) {
             return res.status(400).json({ error: 'URL is required' });
         }
 
-        // Validate YouTube URL
-        if (!ytdl.validateURL(url)) {
+        // Extract video ID
+        const videoId = extractVideoId(url);
+        if (!videoId) {
             return res.status(400).json({ error: 'Invalid YouTube URL' });
         }
 
-        console.log('Converting:', url, 'to', format);
+        const youtubeUrl = `https://www.youtube.com/watch?v=${videoId}`;
 
-        // Get video info with agent
-        const info = await ytdl.getInfo(url, {
-            requestOptions: {
-                headers: {
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                }
-            }
-        });
-        
-        const videoDetails = info.videoDetails;
-        
-        // Sanitize title for filename
-        const sanitizedTitle = videoDetails.title
-            .replace(/[^\w\s-]/g, '')
-            .replace(/\s+/g, '_')
-            .substring(0, 50) || 'video';
+        console.log('Converting:', { videoId, format, quality });
 
-        let selectedFormat = null;
-        let filename = '';
-        let contentType = '';
-
-        if (format === 'mp3') {
-            filename = `${sanitizedTitle}.m4a`;
-            contentType = 'audio/mp4';
-            
-            // Find best audio format
-            for (const fmt of info.formats) {
-                if (fmt.hasAudio && !fmt.hasVideo && fmt.audioQuality) {
-                    if (!selectedFormat || (fmt.audioBitrate && fmt.audioBitrate > (selectedFormat.audioBitrate || 0))) {
-                        selectedFormat = fmt;
-                    }
-                }
-            }
-
-            // Fallback
-            if (!selectedFormat) {
-                selectedFormat = ytdl.chooseFormat(info.formats, { quality: 'highestaudio', filter: 'audioonly' });
-            }
-        } else {
-            filename = `${sanitizedTitle}.mp4`;
-            contentType = 'video/mp4';
-            const targetHeight = parseInt(quality) || 720;
-            
-            // Find best combined format (video + audio in one)
-            for (const fmt of info.formats) {
-                if (fmt.container === 'mp4' && fmt.hasVideo && fmt.hasAudio) {
-                    const fmtHeight = fmt.height || 0;
-                    if (fmtHeight <= targetHeight) {
-                        if (!selectedFormat || fmtHeight > (selectedFormat.height || 0)) {
-                            selectedFormat = fmt;
-                        }
-                    }
-                }
-            }
-
-            // Fallback to any combined format
-            if (!selectedFormat) {
-                for (const fmt of info.formats) {
-                    if (fmt.hasVideo && fmt.hasAudio) {
-                        if (!selectedFormat || (fmt.height && fmt.height > (selectedFormat.height || 0))) {
-                            selectedFormat = fmt;
-                        }
-                    }
-                }
-            }
-        }
-
-        if (!selectedFormat) {
-            console.error('No suitable format found');
-            return res.status(500).json({ error: 'No suitable format found for this video' });
-        }
-
-        console.log('Using format:', selectedFormat.qualityLabel || selectedFormat.itag);
-
-        // Set response headers
-        res.setHeader('Content-Type', contentType);
-        res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-        if (selectedFormat.contentLength) {
-            res.setHeader('Content-Length', selectedFormat.contentLength);
-        }
-
-        // Stream the video/audio
-        const stream = ytdl(url, { 
-            format: selectedFormat,
-            requestOptions: {
-                headers: {
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                }
-            }
+        // Use cobalt.tools API
+        const cobaltResponse = await fetch('https://api.cobalt.tools/api/json', {
+            method: 'POST',
+            headers: {
+                'Accept': 'application/json',
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                url: youtubeUrl,
+                vCodec: 'h264',
+                vQuality: quality === '1080p' ? '1080' : quality === '720p' ? '720' : quality === '480p' ? '480' : '720',
+                aFormat: 'mp3',
+                isAudioOnly: format === 'mp3',
+                filenamePattern: 'basic',
+            })
         });
 
-        stream.on('error', (err) => {
-            console.error('Stream error:', err.message);
-            if (!res.headersSent) {
-                res.status(500).json({ error: 'Stream failed: ' + err.message });
-            }
-        });
+        const data = await cobaltResponse.json();
 
-        stream.pipe(res);
+        if (data.status === 'error') {
+            console.error('Cobalt error:', data);
+            return res.status(400).json({ error: data.text || 'Failed to process video' });
+        }
+
+        if (data.status === 'stream' || data.status === 'redirect') {
+            return res.status(200).json({
+                success: true,
+                downloadUrl: data.url,
+                filename: `video.${format === 'mp3' ? 'mp3' : 'mp4'}`
+            });
+        }
+
+        if (data.status === 'picker' && data.picker && data.picker.length > 0) {
+            // Multiple options available, return the first one
+            return res.status(200).json({
+                success: true,
+                downloadUrl: data.picker[0].url,
+                filename: `video.${format === 'mp3' ? 'mp3' : 'mp4'}`
+            });
+        }
+
+        // Fallback error
+        console.error('Unexpected response:', data);
+        return res.status(500).json({ error: 'Could not generate download link' });
 
     } catch (error) {
         console.error('Error:', error.message);
-
-        if (error.message?.includes('Video unavailable')) {
-            return res.status(404).json({ error: 'Video not found or unavailable' });
-        }
-
-        if (error.message?.includes('Private video')) {
-            return res.status(403).json({ error: 'This video is private' });
-        }
-
-        if (error.message?.includes('Sign in')) {
-            return res.status(403).json({ error: 'This video requires sign-in' });
-        }
-
-        if (!res.headersSent) {
-            return res.status(500).json({ 
-                error: 'Conversion failed. YouTube may be blocking requests. Please try again later.'
-            });
-        }
+        return res.status(500).json({ 
+            error: 'Failed to convert video. Please try again.'
+        });
     }
 };
+
+function extractVideoId(url) {
+    if (!url) return null;
+    
+    const patterns = [
+        /(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/|youtube\.com\/shorts\/)([a-zA-Z0-9_-]{11})/,
+        /^([a-zA-Z0-9_-]{11})$/
+    ];
+    
+    for (const pattern of patterns) {
+        const match = url.match(pattern);
+        if (match) return match[1];
+    }
+    
+    try {
+        const urlObj = new URL(url);
+        if (urlObj.searchParams.has('v')) {
+            return urlObj.searchParams.get('v');
+        }
+    } catch (e) {}
+    
+    return null;
+}
