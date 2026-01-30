@@ -379,6 +379,53 @@ main {
     margin-bottom: 20px;
 }
 
+.download-message {
+    font-size: 1.25rem;
+    font-weight: 600;
+    margin-bottom: 16px;
+}
+
+.services-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    margin-bottom: 16px;
+}
+
+.service-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    padding: 14px 24px;
+    background: linear-gradient(135deg, var(--primary), var(--primary-dark));
+    border: none;
+    border-radius: var(--border-radius);
+    color: white;
+    font-size: 1rem;
+    font-weight: 600;
+    text-decoration: none;
+    cursor: pointer;
+    transition: all 0.3s ease;
+}
+
+.service-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 20px rgba(255, 0, 0, 0.4);
+}
+
+.service-btn svg {
+    width: 20px;
+    height: 20px;
+}
+
+.download-note {
+    font-size: 0.875rem !important;
+    color: var(--text-muted) !important;
+    font-weight: 400 !important;
+    margin-bottom: 20px !important;
+}
+
 /* Error Section */
 .error-section {
     margin-top: 24px;

@@ -15,7 +15,7 @@ const progressSection = document.getElementById('progress-section');
 const progressFill = document.getElementById('progress-fill');
 const progressText = document.getElementById('progress-text');
 const downloadSection = document.getElementById('download-section');
-const downloadLink = document.getElementById('download-link');
+const servicesList = document.getElementById('services-list');
 const convertAnother = document.getElementById('convert-another');
 const errorSection = document.getElementById('error-section');
 const errorMessage = document.getElementById('error-message');
@@ -183,13 +183,13 @@ async function convertVideo() {
         progressFill.style.width = `${progress}%`;
         
         if (progress < 30) {
-            progressText.textContent = 'Fetching video...';
+            progressText.textContent = 'Preparing...';
         } else if (progress < 60) {
             progressText.textContent = 'Processing...';
         } else {
             progressText.textContent = 'Almost done...';
         }
-    }, 500);
+    }, 300);
     
     try {
         const response = await fetch('/api/convert', {
@@ -210,31 +210,32 @@ async function convertVideo() {
             throw new Error(data.error || 'Conversion failed');
         }
         
-        if (!data.downloadUrl) {
-            throw new Error('No download URL received');
+        if (!data.services || data.services.length === 0) {
+            throw new Error('No download services available');
         }
         
-        // Create filename
-        const sanitizedTitle = currentVideoInfo.title
-            .replace(/[^\w\s-]/g, '')
-            .replace(/\s+/g, '_')
-            .substring(0, 50);
-        const filename = `${sanitizedTitle}.${selectedFormat}`;
+        // Clear previous services
+        servicesList.innerHTML = '';
         
-        // Update download link
-        downloadLink.href = data.downloadUrl;
-        downloadLink.download = filename;
-        downloadLink.target = '_blank';
-        
-        // Update button text based on response type
-        if (data.redirect) {
-            downloadLink.textContent = 'Open Download Page';
-        } else {
-            downloadLink.textContent = 'Download ' + selectedFormat.toUpperCase();
-        }
+        // Add service buttons
+        data.services.forEach(service => {
+            const btn = document.createElement('a');
+            btn.href = service.url;
+            btn.target = '_blank';
+            btn.rel = 'noopener noreferrer';
+            btn.className = 'service-btn';
+            btn.innerHTML = `
+                <svg viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/>
+                </svg>
+                ${service.name}
+            `;
+            btn.title = service.instructions;
+            servicesList.appendChild(btn);
+        });
         
         progressFill.style.width = '100%';
-        progressText.textContent = 'Complete!';
+        progressText.textContent = 'Ready!';
         
         setTimeout(() => {
             showSection(downloadSection);

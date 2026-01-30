@@ -1,5 +1,6 @@
-// Convert endpoint - redirect to external download service
-// Since YouTube download APIs require self-hosting, we redirect to a trusted service
+// Convert endpoint - generates external service URLs
+// Direct YouTube downloads don't work on Vercel due to IP blocking
+// So we redirect users to trusted converter services
 module.exports = async function handler(req, res) {
     // Enable CORS
     res.setHeader('Access-Control-Allow-Origin', '*');
@@ -15,7 +16,7 @@ module.exports = async function handler(req, res) {
     }
 
     try {
-        const { url, format, quality } = req.body || {};
+        const { url, format } = req.body || {};
 
         if (!url) {
             return res.status(400).json({ error: 'URL is required' });
@@ -27,80 +28,62 @@ module.exports = async function handler(req, res) {
             return res.status(400).json({ error: 'Invalid YouTube URL' });
         }
 
-        console.log('Converting:', { videoId, format, quality });
+        console.log('Processing:', { videoId, format });
 
-        // Use loader.to service (free, no API key required)
-        // This is a redirect-based approach
-        const youtubeUrl = encodeURIComponent(`https://www.youtube.com/watch?v=${videoId}`);
+        // Generate multiple converter service links
+        // These are well-known, reliable YouTube converter services
+        const services = [];
         
-        let downloadUrl;
         if (format === 'mp3') {
-            // For MP3 audio
-            downloadUrl = `https://loader.to/ajax/download.php?format=mp3&url=${youtubeUrl}`;
+            services.push(
+                {
+                    name: 'Y2Mate',
+                    url: `https://www.y2mate.com/youtube-mp3/${videoId}`,
+                    instructions: 'Click "Convert" then "Download"'
+                },
+                {
+                    name: 'YTMP3',
+                    url: `https://ytmp3.cc/youtube-to-mp3/?url=https://www.youtube.com/watch?v=${videoId}`,
+                    instructions: 'Click "Convert" then "Download"'
+                },
+                {
+                    name: 'SaveFrom',
+                    url: `https://en.savefrom.net/391GA/#url=https://www.youtube.com/watch?v=${videoId}`,
+                    instructions: 'Select MP3 format and download'
+                }
+            );
         } else {
-            // For MP4 video - map quality
-            const qualityMap = {
-                '1080': '1080',
-                '720': '720', 
-                '480': '480',
-                '360': '360'
-            };
-            const videoQuality = qualityMap[quality] || '720';
-            downloadUrl = `https://loader.to/ajax/download.php?format=${videoQuality}&url=${youtubeUrl}`;
+            services.push(
+                {
+                    name: 'Y2Mate',
+                    url: `https://www.y2mate.com/youtube/${videoId}`,
+                    instructions: 'Select quality and click "Download"'
+                },
+                {
+                    name: 'SaveFrom',
+                    url: `https://en.savefrom.net/391GA/#url=https://www.youtube.com/watch?v=${videoId}`,
+                    instructions: 'Select MP4 quality and download'
+                },
+                {
+                    name: 'SSYouTube',
+                    url: `https://ssyoutube.com/watch?v=${videoId}`,
+                    instructions: 'Select format and download'
+                }
+            );
         }
-
-        // Fetch the download info from loader.to
-        const response = await fetch(downloadUrl, {
-            headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-                'Accept': 'application/json',
-            }
-        });
-
-        const data = await response.json();
-
-        if (data.success && data.download_url) {
-            return res.status(200).json({
-                success: true,
-                downloadUrl: data.download_url,
-                filename: `video.${format === 'mp3' ? 'mp3' : 'mp4'}`
-            });
-        }
-
-        // If loader.to doesn't work, provide alternative service links
-        // These are well-known YouTube converter services
-        const alternativeUrl = format === 'mp3' 
-            ? `https://www.y2mate.com/youtube-mp3/${videoId}`
-            : `https://www.y2mate.com/youtube/${videoId}`;
 
         return res.status(200).json({
             success: true,
-            redirect: true,
-            downloadUrl: alternativeUrl,
-            message: 'Click the download button to get your file'
+            videoId: videoId,
+            format: format,
+            services: services,
+            message: 'Choose a converter service below'
         });
 
     } catch (error) {
         console.error('Error:', error.message);
-        
-        // Fallback - return a link to a conversion service
-        const videoId = extractVideoId(req.body?.url);
-        if (videoId) {
-            const format = req.body?.format || 'mp4';
-            const fallbackUrl = format === 'mp3'
-                ? `https://www.y2mate.com/youtube-mp3/${videoId}`
-                : `https://www.y2mate.com/youtube/${videoId}`;
-            
-            return res.status(200).json({
-                success: true,
-                redirect: true,
-                downloadUrl: fallbackUrl,
-                message: 'Click to download from external service'
-            });
-        }
-        
         return res.status(500).json({ 
-            error: 'Failed to convert video. Please try again.'
+            error: 'Failed to process. Please try again.'
         });
     }
 };
