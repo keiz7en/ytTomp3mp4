@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>YouTube to MP3/MP4 Converter</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <div class="logo">
+                <svg viewBox="0 0 24 24" width="40" height="40" fill="currentColor">
+                    <path d="M19.615 3.184c-3.604-.246-11.631-.245-15.23 0-3.897.266-4.356 2.62-4.385 8.816.029 6.185.484 8.549 4.385 8.816 3.6.245 11.626.246 15.23 0 3.897-.266 4.356-2.62 4.385-8.816-.029-6.185-.484-8.549-4.385-8.816zm-10.615 12.816v-8l8 3.993-8 4.007z"/>
+                </svg>
+                <h1>YT Converter</h1>
+            </div>
+            <p class="tagline">Convert YouTube videos to MP3 or MP4 instantly</p>
+        </header>
+
+        <main>
+            <div class="converter-card">
+                <!-- Step 1: URL Input -->
+                <div class="input-section">
+                    <label for="url-input">Paste YouTube URL</label>
+                    <div class="url-input-wrapper">
+                        <input 
+                            type="text" 
+                            id="url-input" 
+                            placeholder="https://www.youtube.com/watch?v=..."
+                            autocomplete="off"
+                        >
+                        <button id="fetch-btn" class="btn btn-primary">
+                            <span class="btn-text">Fetch</span>
+                            <span class="btn-loader"></span>
+                        </button>
+                    </div>
+                    <p id="url-error" class="error-msg"></p>
+                </div>
+
+                <!-- Step 2: Video Info (Hidden initially) -->
+                <div id="video-info" class="video-info hidden">
+                    <img id="video-thumbnail" src="" alt="Video thumbnail">
+                    <div class="video-details">
+                        <h3 id="video-title"></h3>
+                        <p id="video-duration"></p>
+                        <p id="video-author"></p>
+                    </div>
+                </div>
+
+                <!-- Step 3: Format Selection (Hidden initially) -->
+                <div id="format-section" class="format-section hidden">
+                    <div class="format-group">
+                        <label>Select Format</label>
+                        <div class="format-buttons">
+                            <button class="format-btn active" data-format="mp3">
+                                <svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor">
+                                    <path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/>
+                                </svg>
+                                MP3 Audio
+                            </button>
+                            <button class="format-btn" data-format="mp4">
+                                <svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor">
+                                    <path d="M18 4l2 4h-3l-2-4h-2l2 4h-3l-2-4H8l2 4H7L5 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V4h-4z"/>
+                                </svg>
+                                MP4 Video
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="quality-group">
+                        <label>Select Quality</label>
+                        <select id="quality-select">
+                            <!-- Options populated dynamically -->
+                        </select>
+                    </div>
+
+                    <button id="convert-btn" class="btn btn-convert">
+                        <span class="btn-text">Convert & Download</span>
+                        <span class="btn-loader"></span>
+                    </button>
+                </div>
+
+                <!-- Progress Section -->
+                <div id="progress-section" class="progress-section hidden">
+                    <div class="progress-bar">
+                        <div class="progress-fill" id="progress-fill"></div>
+                    </div>
+                    <p id="progress-text">Preparing...</p>
+                </div>
+
+                <!-- Download Section -->
+                <div id="download-section" class="download-section hidden">
+                    <div class="success-icon">
+                        <svg viewBox="0 0 24 24" width="48" height="48" fill="currentColor">
+                            <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/>
+                        </svg>
+                    </div>
+                    <p>Conversion Complete!</p>
+                    <a id="download-link" class="btn btn-download" download>
+                        <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
+                            <path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/>
+                        </svg>
+                        Download File
+                    </a>
+                    <button id="convert-another" class="btn btn-secondary">Convert Another</button>
+                </div>
+
+                <!-- Error Section -->
+                <div id="error-section" class="error-section hidden">
+                    <div class="error-icon">
+                        <svg viewBox="0 0 24 24" width="48" height="48" fill="currentColor">
+                            <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/>
+                        </svg>
+                    </div>
+                    <p id="error-message">Something went wrong</p>
+                    <button id="try-again" class="btn btn-secondary">Try Again</button>
+                </div>
+            </div>
+        </main>
+
+        <footer>
+            <p>⚠️ For personal use only. Respect copyright laws.</p>
+            <p>Made with ❤️ | No files stored permanently</p>
+        </footer>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
