@@ -1,0 +1,20 @@
+{
+  "name": "yt-to-mp3-mp4",
+  "version": "1.0.0",
+  "description": "YouTube to MP3/MP4 Converter",
+  "main": "api/index.js",
+  "scripts": {
+    "dev": "vercel dev",
+    "build": "vercel build",
+    "start": "vercel dev"
+  },
+  "dependencies": {
+    "@distube/ytdl-core": "^4.14.4",
+    "fluent-ffmpeg": "^2.1.3",
+    "ffmpeg-static": "^5.2.0",
+    "content-disposition": "^0.5.4"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
